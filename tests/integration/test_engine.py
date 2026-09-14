@@ -5,7 +5,7 @@ from pathlib import Path
 from memequant.engine import IngestionEngine
 from memequant.protocols.decoder import default_decoders
 from memequant.storage.normalized import NormalizedStore
-from memequant.storage.raw import RawJsonlGzipStore
+from memequant.storage.raw import RawJsonlGzipStore, RawLogJsonlGzipStore
 from memequant.storage.state import StateStore
 from tests.helpers import encode_event, envelope, load_idl, log_event
 
@@ -17,6 +17,7 @@ def engine(tmp_path: Path) -> IngestionEngine:
     return IngestionEngine(
         state=StateStore(tmp_path / "state.db"),
         raw_store=RawJsonlGzipStore(tmp_path / "raw", fsync_every=0),
+        raw_log_store=RawLogJsonlGzipStore(tmp_path / "raw", fsync_every=0),
         normalized_store=NormalizedStore(tmp_path / "normalized", batch_size=100, prefer_parquet=False),
         decoders=default_decoders(),
     )

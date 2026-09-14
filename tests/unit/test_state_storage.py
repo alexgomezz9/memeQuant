@@ -26,6 +26,26 @@ def test_observations_are_per_program(tmp_path: Path):
     state.close()
 
 
+def test_counter_updates_support_increments_gauges_and_maxima(tmp_path: Path):
+    state = StateStore(tmp_path / "state.db")
+    state.update_counters(
+        increments={"received": 2},
+        gauges={"queue_current": 5},
+        maxima={"queue_high": 5},
+    )
+    state.update_counters(
+        increments={"received": 3},
+        gauges={"queue_current": 1},
+        maxima={"queue_high": 3},
+    )
+    assert state.counters() == {
+        "received": 5,
+        "queue_current": 1,
+        "queue_high": 5,
+    }
+    state.close()
+
+
 def test_raw_roundtrip(tmp_path: Path):
     raw = RawJsonlGzipStore(tmp_path / "raw", fsync_every=1)
     env = envelope(PUMP, [])

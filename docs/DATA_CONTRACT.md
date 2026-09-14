@@ -3,9 +3,11 @@
 ## Ordering/time fields
 
 - `slot`: Solana ledger slot containing the transaction. Primary coarse chain ordering key.
-- `transaction_index`: order within a block when supplied by `blockSubscribe`; unavailable when recovered through `getTransaction`.
+- `transaction_index`: order within a block when supplied by `blockSubscribe`; unavailable
+  through `logsSubscribe` and `getTransaction`.
 - `log_index`: index in the transaction's `meta.logMessages`; used to make event IDs deterministic.
-- `block_time`: validator-estimated Unix block time. Useful event-time approximation, **not** receipt latency.
+- `block_time`: validator-estimated Unix block time. Useful event-time approximation, **not**
+  receipt latency. It is unavailable in `logsSubscribe`; Pump/PumpSwap `event_timestamp` remains.
 - `event_timestamp`: timestamp emitted by Pump/PumpSwap. Treat as protocol data, not as the collector's clock.
 - `received_at`: UTC wall-clock time when this collector received/fetched the transaction. Reconciled transactions therefore have a later `received_at` than their actual live availability.
 
@@ -33,4 +35,12 @@ Failed Solana transactions are kept in RAW for audit/latency/failure analysis bu
 
 ## Source of truth
 
-`data/raw` is authoritative. All normalized/research tables are disposable derived artifacts and must be reproducible from RAW plus a versioned decoder/configuration.
+`data/raw` is authoritative. It contains two honest record shapes:
+
+- `RawLogNotification` in `log_notifications.jsonl.gz`: partial streaming evidence with
+  signature, slot, error, context and logs;
+- `RawTransactionEnvelope` in `transactions.jsonl.gz`: a complete RPC transaction response
+  obtained from block subscription, recovery or selective enrichment.
+
+All normalized/research tables are disposable derived artifacts and must be reproducible from
+RAW plus a versioned decoder/configuration.

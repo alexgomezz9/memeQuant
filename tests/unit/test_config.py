@@ -7,6 +7,7 @@ from memequant.config import Settings
 
 def test_live_urls_required():
     s = Settings(_env_file=None)
+    assert s.max_supported_transaction_version == 1
     with pytest.raises(RuntimeError):
         s.require_live_urls()
 
@@ -22,6 +23,8 @@ def test_settings_aliases_and_paths(tmp_path: Path):
     s.require_live_urls()
     assert s.state_db_path == tmp_path / "state/collector.sqlite3"
     assert s.max_supported_transaction_version == 1
+    assert s.http_rps_limit == 6.0
+    assert s.ws_queue_maxsize == 5_000
 
 
 def test_protocol_selection_validation():

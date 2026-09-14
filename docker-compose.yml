@@ -5,4 +5,6 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-    restart: unless-stopped
+    # The collector handles transient reconnects itself. Do not restart a terminal
+    # reconciliation-integrity failure into an RPC-consuming process loop.
+    restart: "no"

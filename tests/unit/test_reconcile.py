@@ -82,3 +82,21 @@ async def test_reconcile_null_transaction_fails_closed(tmp_path: Path, monkeypat
         assert state.get_checkpoint(PUMP)["last_signature"] == "checkpoint"
     finally:
         state.close()
+
+
+@pytest.mark.asyncio
+async def test_missing_signatures_skips_failed_transactions(tmp_path: Path):
+    state = StateStore(tmp_path / "s.db")
+    state.set_checkpoint(PUMP, "checkpoint", 10, "t")
+    rpc = QueueRpc([[
+        {"signature": "ok2", "slot": 13, "err": None},
+        {"signature": "failed", "slot": 12, "err": {"InstructionError": [1, "Custom"]}},
+        {"signature": "ok1", "slot": 11, "err": None},
+    ]])
+    r = Reconciler(rpc, state, "test", "confirmed", max_signatures=10)
+    try:
+        got = await r.missing_signatures(PUMP)
+        assert [x["signature"] for x in got] == ["ok1", "ok2"]
+        assert state.counters()["reconcile_failed_signatures_skipped"] == 1
+    finally:
+        state.close()

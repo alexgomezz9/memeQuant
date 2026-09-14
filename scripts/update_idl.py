@@ -17,7 +17,7 @@ def main() -> None:
     target = Path("idl/upstream")
     target.mkdir(parents=True, exist_ok=True)
     for name, url in URLS.items():
-        with urlopen(url, timeout=30) as response:  # noqa: S310 - fixed official URLs
+        with urlopen(url, timeout=30) as response:
             body = response.read()
         path = target / f"{name}.json"
         path.write_bytes(body)

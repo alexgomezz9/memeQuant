@@ -9,7 +9,8 @@ A read-only, point-in-time Solana/Pump.fun data collector designed for **researc
 Implemented:
 
 - Pump.fun live transaction collection through standard Solana JSON-RPC/WebSocket.
-- Preferred `blockSubscribe` mode with automatic fallback to `logsSubscribe + getTransaction` when a provider does not support block subscriptions.
+- Preferred `blockSubscribe` mode with automatic fallback to direct Anchor event decoding from
+  `logsSubscribe` when a provider does not support block subscriptions.
 - Per-program recovery with `getSignaturesForAddress` + `getTransaction` after disconnects.
 - Race-safe startup: establish a chain-tip boundary, subscribe, then reconcile while websocket messages queue.
 - Authoritative append-only RAW archive (`JSONL.GZ`).
@@ -18,7 +19,9 @@ Implemented:
 - Typed normalized datasets for tokens, trades, completions, migrations and pools.
 - Integer-only on-chain amounts; no financial `float` conversion.
 - Transaction and event idempotency with SQLite state/checkpoints.
-- Failed Solana transactions retained in RAW but excluded from economic event tables.
+- Failed transactions received with full block/transaction data are retained in RAW but
+  excluded from economic event tables. Failed `logsSubscribe` notifications are counted and
+  skipped before RAW/decoding because they cannot commit economic state.
 - Strict schema-drift behavior: unknown discriminators, short payloads, or extra trailing event bytes are quarantined rather than silently normalized.
 - Deterministic rebuild of derived datasets from RAW.
 - Tests for Borsh decoding, nested program-log attribution, storage, dedupe, cross-program observations, failed transactions, reconciliation limits, RPC configuration and rebuilds.
@@ -41,7 +44,10 @@ Those belong after the live data path is measured and validated against real mai
 
 `data/raw` is the authoritative ledger. `data/normalized` is only a convenience derived cache. If the process crashes during a buffered Parquet write or the protocol schema changes, research data must be regenerated from RAW with `memequant-replay`.
 
-RAW rows are flushed before a transaction checkpoint advances. Duplicate RAW rows are allowed after crash/reconciliation; deterministic rebuild deduplicates them by signature/event ID. This design prefers recoverable duplication over silent loss.
+RAW rows are flushed before a transaction checkpoint advances. Streaming logs are stored as
+`RawLogNotification`; block/recovery/enrichment results use `RawTransactionEnvelope`. The former
+is never represented as a complete transaction. Duplicate RAW rows are allowed and deterministic
+rebuild deduplicates them by signature/event ID.
 
 ## Programs
 
@@ -135,7 +141,9 @@ been tested offline and what still requires your own live RPC endpoint.
 ```text
 data/
 ├── raw/
-│   └── date=YYYY-MM-DD/hour=HH/transactions.jsonl.gz
+│   └── date=YYYY-MM-DD/hour=HH/
+│       ├── log_notifications.jsonl.gz
+│       └── transactions.jsonl.gz
 ├── normalized/
 │   ├── events/date=YYYY-MM-DD/part-*.parquet
 │   ├── tokens/date=YYYY-MM-DD/part-*.parquet
@@ -187,7 +195,10 @@ does not guess that relationship.
 
 ## Subscription modes
 
-`MEMEQUANT_SUBSCRIPTION_MODE=auto` first attempts `blockSubscribe`. Solana documents `blockSubscribe` as unstable and validators/providers may disable it. If the subscription RPC rejects it, the collector falls back to `logsSubscribe`, then fetches each matching transaction over HTTP.
+`MEMEQUANT_SUBSCRIPTION_MODE=auto` first attempts `blockSubscribe`. Solana documents
+`blockSubscribe` as unstable and validators/providers may disable it. If rejected, the collector
+falls back to `logsSubscribe`, writes the notification as partial RAW and decodes Anchor
+`Program data:` directly from `value.logs`. It does not fetch every transaction over HTTP.
 
 A filtered `blockSubscribe` **does not emit slots containing no matching transaction**. Non-consecutive observed slot numbers are therefore normal and must not be called data gaps. Recovery uses program-address signatures instead.
 
@@ -209,22 +220,37 @@ Pump-only mode still decodes PumpSwap events when Pump invokes PumpSwap inside t
 
 1. The latest chain signature becomes the boundary on the first run; v0 does not unexpectedly backfill old history.
 2. Websocket subscriptions are established before reconnect reconciliation.
-3. While HTTP reconciliation runs, websocket notifications queue and are later deduplicated.
+3. A dedicated reader drains websocket notifications into a bounded queue while HTTP
+   reconciliation runs; queued overlap is later deduplicated.
 4. A transaction can be observed through both Pump and PumpSwap. It is decoded once, but each program gets its own observation/checkpoint.
-5. If the number of missed signatures exceeds `MEMEQUANT_MAX_RECONCILE_SIGNATURES`, recovery **fails closed** instead of jumping the checkpoint over unknown history.
+5. If the number of missed signatures exceeds `MEMEQUANT_MAX_RECONCILE_SIGNATURES`, recovery
+   **fails closed and terminates** instead of jumping the checkpoint or reconnecting forever.
 6. Checkpoints cannot regress to a lower slot.
+
+`MEMEQUANT_WS_QUEUE_MAXSIZE` bounds memory during recovery. Filling it is also a terminal
+integrity failure. Steady-state logs decoding is local and is not capped by HTTP RPS. Reconnect
+reconciliation still uses HTTP for historical signatures while new notifications queue, so a
+long recovery remains a bounded fail-closed condition.
+
+Use `memequant-stats` to compare `ws_notifications_received`, `ws_notifications_enqueued`,
+`ws_notifications_processed`, queue watermarks, successful/failed log counts, `getTransaction`
+activity and HTTP 429s. Rate gauges ending in `_millirps` are scaled by 1,000.
 
 See `docs/RECOVERY.md` for caveats.
 
 ## Transaction versions
 
-As of 2026-09-10, Solana mainnet v1 transactions are not yet active and the stable RPC docs still use `maxSupportedTransactionVersion: 0`. The project exposes:
+The collector does not deserialize transaction messages; it only reads the stable RPC envelope,
+signature and `meta.logMessages`. It can therefore safely declare transaction version 1 support
+for the remaining `getTransaction`/`blockSubscribe` paths:
 
 ```dotenv
-MEMEQUANT_MAX_SUPPORTED_TRANSACTION_VERSION=0
+MEMEQUANT_MAX_SUPPORTED_TRANSACTION_VERSION=1
 ```
 
-When v1 activates, update this to `1` only after verifying provider support. Solana warns that clients capped at v0 can fail on a v1 transaction, including `blockSubscribe` returning `block: null` behavior; the collector treats a null block as an error rather than silently moving on.
+This is a JSON integer, not a string. Clients capped at 0 fail when a v1 transaction is returned;
+`blockSubscribe` can return `block: null`. The collector treats a null block as an error rather
+than silently moving on. Direct `logsSubscribe` decoding is transaction-version agnostic.
 
 ## Research integrity
 

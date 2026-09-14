@@ -6,12 +6,20 @@ from memequant.storage.state import StateStore
 
 
 def _file_stats(data_dir: Path) -> dict:
-    raw = list((data_dir / "raw").glob("date=*/hour=*/transactions.jsonl.gz"))
+    raw_transactions = list(
+        (data_dir / "raw").glob("date=*/hour=*/transactions.jsonl.gz")
+    )
+    raw_logs = list(
+        (data_dir / "raw").glob("date=*/hour=*/log_notifications.jsonl.gz")
+    )
+    raw = raw_transactions + raw_logs
     parquet = list((data_dir / "normalized").glob("*/*/*.parquet"))
     jsonl = list((data_dir / "normalized").glob("*/*/*.jsonl.gz"))
     return {
         "raw_files": len(raw),
         "raw_bytes": sum(p.stat().st_size for p in raw),
+        "raw_transaction_files": len(raw_transactions),
+        "raw_log_notification_files": len(raw_logs),
         "parquet_files": len(parquet),
         "normalized_jsonl_files": len(jsonl),
         "normalized_bytes": sum(p.stat().st_size for p in parquet + jsonl),

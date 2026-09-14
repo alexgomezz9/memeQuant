@@ -1,9 +1,17 @@
 from pathlib import Path
 
+import pytest
+
 from memequant.protocols.decoder import ProtocolDecoder
 from memequant.protocols.normalize import normalize_event
 from memequant.utils import b58encode
-from tests.helpers import encode_event, envelope, load_idl, log_event
+from tests.helpers import (
+    encode_event,
+    envelope,
+    load_idl,
+    log_event,
+    log_notification,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 PUMP = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
@@ -35,6 +43,71 @@ def test_pump_trade_decode_and_normalize_without_float():
     assert isinstance(trade.base_amount_raw, int)
     assert trade.quote_amount_raw == 1_234_567_890
     assert trade.side == "buy"
+
+
+def test_full_transaction_and_log_notification_decode_shared_fields_identically():
+    idl = load_idl("pump.snapshot.json")
+    raw = encode_event(
+        idl,
+        "TradeEvent",
+        {
+            "token_amount": 99,
+            "quote_amount": 42,
+            "is_buy": False,
+            "timestamp": 1_800_000_001,
+            "shareholders": [],
+        },
+    )
+    logs = log_event(PUMP, raw)
+    dec = ProtocolDecoder("pump", ROOT / "src/memequant/idl/pump.snapshot.json")
+
+    tx_events, tx_unknown = dec.decode_transaction(envelope(PUMP, logs))
+    log_events, log_unknown = dec.decode_log_notification(log_notification(PUMP, logs))
+
+    assert not tx_unknown and not log_unknown
+    assert len(tx_events) == len(log_events) == 1
+    tx_event = tx_events[0]
+    log_event_decoded = log_events[0]
+    for field in (
+        "event_id",
+        "protocol",
+        "program_id",
+        "event_type",
+        "signature",
+        "slot",
+        "received_at",
+        "log_index",
+        "payload",
+        "trailing_bytes",
+    ):
+        assert getattr(tx_event, field) == getattr(log_event_decoded, field)
+    assert log_event_decoded.block_time is None
+    assert log_event_decoded.transaction_index is None
+
+    tx_dataset, tx_trade = normalize_event(tx_event)
+    log_dataset, log_trade = normalize_event(log_event_decoded)
+    assert tx_dataset == log_dataset == "trades"
+    tx_shared = tx_trade.model_dump(exclude={"block_time"})
+    log_shared = log_trade.model_dump(exclude={"block_time"})
+    assert tx_shared == log_shared
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    ["CreateEvent", "TradeEvent", "CompleteEvent", "CompletePumpAmmMigrationEvent"],
+)
+def test_all_core_pump_events_normalize_from_log_notification(event_type: str):
+    idl = load_idl("pump.snapshot.json")
+    overrides = {"shareholders": []} if event_type == "TradeEvent" else {}
+    raw = encode_event(idl, event_type, overrides)
+    dec = ProtocolDecoder("pump", ROOT / "src/memequant/idl/pump.snapshot.json")
+    events, unknown = dec.decode_log_notification(
+        log_notification(PUMP, log_event(PUMP, raw))
+    )
+    assert not unknown
+    assert len(events) == 1
+    assert events[0].event_type == event_type
+    assert normalize_event(events[0]) is not None
 
 
 def test_schema_drift_extra_bytes_fails_closed():

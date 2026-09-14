@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
-from memequant.models import DecodedEvent, RawTransactionEnvelope, UnknownProgramData
+from memequant.models import (
+    DecodedEvent,
+    RawLogNotification,
+    RawTransactionEnvelope,
+    UnknownProgramData,
+)
 from memequant.protocols.anchor import BorshDecodeError, IdlEventDecoder, iter_program_data
 from memequant.utils import stable_event_id
 
@@ -22,6 +27,37 @@ class ProtocolDecoder:
         tx_result = envelope.rpc_transaction
         meta = tx_result.get("meta") or {}
         logs = meta.get("logMessages") or meta.get("log_messages") or []
+        return self._decode_logs(
+            logs,
+            signature=envelope.signature,
+            slot=envelope.slot,
+            block_time=envelope.block_time,
+            received_at=envelope.received_at,
+            transaction_index=envelope.transaction_index,
+        )
+
+    def decode_log_notification(
+        self, notification: RawLogNotification
+    ) -> tuple[list[DecodedEvent], list[UnknownProgramData]]:
+        return self._decode_logs(
+            notification.logs,
+            signature=notification.signature,
+            slot=notification.slot,
+            block_time=None,
+            received_at=notification.received_at,
+            transaction_index=None,
+        )
+
+    def _decode_logs(
+        self,
+        logs: list[str],
+        *,
+        signature: str,
+        slot: int,
+        block_time: int | None,
+        received_at,
+        transaction_index: int | None,
+    ) -> tuple[list[DecodedEvent], list[UnknownProgramData]]:
         events: list[DecodedEvent] = []
         unknown: list[UnknownProgramData] = []
 
@@ -29,7 +65,7 @@ class ProtocolDecoder:
             if program_id != self.program_id:
                 continue
             event_id_base = stable_event_id(
-                envelope.signature, program_id, log_index, "program-data"
+                signature, program_id, log_index, "program-data"
             )
             try:
                 decoded = self.idl_decoder.decode(raw)
@@ -39,11 +75,11 @@ class ProtocolDecoder:
                         event_id=event_id_base,
                         protocol=self.protocol,
                         program_id=program_id,
-                        signature=envelope.signature,
-                        slot=envelope.slot,
-                        block_time=envelope.block_time,
-                        received_at=envelope.received_at,
-                        transaction_index=envelope.transaction_index,
+                        signature=signature,
+                        slot=slot,
+                        block_time=block_time,
+                        received_at=received_at,
+                        transaction_index=transaction_index,
                         log_index=log_index,
                         discriminator_hex=raw[:8].hex(),
                         payload_size=len(raw),
@@ -58,11 +94,11 @@ class ProtocolDecoder:
                         event_id=event_id_base,
                         protocol=self.protocol,
                         program_id=program_id,
-                        signature=envelope.signature,
-                        slot=envelope.slot,
-                        block_time=envelope.block_time,
-                        received_at=envelope.received_at,
-                        transaction_index=envelope.transaction_index,
+                        signature=signature,
+                        slot=slot,
+                        block_time=block_time,
+                        received_at=received_at,
+                        transaction_index=transaction_index,
                         log_index=log_index,
                         discriminator_hex=raw[:8].hex(),
                         payload_size=len(raw),
@@ -77,11 +113,11 @@ class ProtocolDecoder:
                         event_id=event_id_base,
                         protocol=self.protocol,
                         program_id=program_id,
-                        signature=envelope.signature,
-                        slot=envelope.slot,
-                        block_time=envelope.block_time,
-                        received_at=envelope.received_at,
-                        transaction_index=envelope.transaction_index,
+                        signature=signature,
+                        slot=slot,
+                        block_time=block_time,
+                        received_at=received_at,
+                        transaction_index=transaction_index,
                         log_index=log_index,
                         discriminator_hex=raw[:8].hex(),
                         payload_size=len(raw),
@@ -91,7 +127,7 @@ class ProtocolDecoder:
                 continue
 
             event_id = stable_event_id(
-                envelope.signature, program_id, log_index, decoded.event_type
+                signature, program_id, log_index, decoded.event_type
             )
             events.append(
                 DecodedEvent(
@@ -99,11 +135,11 @@ class ProtocolDecoder:
                     protocol=self.protocol,
                     program_id=program_id,
                     event_type=decoded.event_type,
-                    signature=envelope.signature,
-                    slot=envelope.slot,
-                    block_time=envelope.block_time,
-                    received_at=envelope.received_at,
-                    transaction_index=envelope.transaction_index,
+                    signature=signature,
+                    slot=slot,
+                    block_time=block_time,
+                    received_at=received_at,
+                    transaction_index=transaction_index,
                     log_index=log_index,
                     payload=decoded.payload,
                     trailing_bytes=decoded.trailing_bytes,

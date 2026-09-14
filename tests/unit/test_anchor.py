@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from memequant.protocols.anchor import BorshDecodeError, BorshReader, IdlEventDecoder, iter_program_data
+from memequant.protocols.anchor import (
+    BorshDecodeError,
+    BorshReader,
+    IdlEventDecoder,
+    iter_program_data,
+)
 from memequant.utils import b58encode
 from tests.helpers import encode_event, load_idl
 

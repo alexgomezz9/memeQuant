@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class StrictModel(BaseModel):
@@ -18,6 +18,21 @@ class RawTransactionEnvelope(StrictModel):
     signature: str
     transaction_index: int | None = None
     rpc_transaction: dict[str, Any]
+
+
+class RawLogNotification(StrictModel):
+    """Authoritative RAW for a logsSubscribe observation, not a full transaction."""
+
+    source_provider: str
+    source_mode: Literal["logs"] = "logs"
+    source_program: str
+    slot: int
+    received_at: datetime
+    signature: str
+    err: Any | None = None
+    logs: list[str]
+    subscription_id: int | None = None
+    rpc_context: dict[str, Any]
 
 
 class DecodedEvent(StrictModel):

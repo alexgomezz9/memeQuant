@@ -16,8 +16,19 @@ proof that the mainnet feed is complete.
 - Signature/event deduplication and per-program observations.
 - Checkpoint non-regression by slot.
 - Reconciliation ordering, hard reconciliation limits, and null-transaction fail-closed behavior.
-- `logsSubscribe` fetch retry/fail-closed behavior.
+- Terminal reconciliation guards do not enter the reconnect loop; transient RPC failures do.
+- Bounded WebSocket recovery buffering and live/reconciliation overlap deduplication.
+- Immediate propagation of queue overflow even when buffered messages remain.
+- Batched receive/enqueue/process, queue-watermark, RPC retry and HTTP 429 counters.
+- Realistic `logsSubscribe` notification -> partial RAW -> direct Anchor decode -> normalized
+  trade -> offline replay, with deterministic counts and values.
+- Shared decoded fields from a full transaction fixture and its logs-only equivalent are equal.
+- Successful and failed live `logsSubscribe` notifications avoid `getTransaction`; failed ones
+  are counted and filtered before the queue.
+- Global HTTP request pacing and API-key redaction in messages, structured fields and tracebacks.
 - RAW gzip append/read and rebuild-from-RAW behavior.
+- Replay of the 158-row local RAW fixture into Parquet (158 unique transactions, 47 events,
+  46 trades) with integer financial columns.
 - JSONL normalized fallback used when PyArrow is unavailable.
 - Local `memequant-doctor` checks and installed console entry points.
 
@@ -30,7 +41,7 @@ items are intentionally **not claimed as validated** yet:
 - whether your exact Helius plan exposes `blockSubscribe`;
 - measured Pump.fun bandwidth / Helius credit consumption per day;
 - live reconciliation after a real connection loss;
-- Parquet writes through PyArrow in this environment;
+- sustained live direct-log throughput and provider-specific log truncation behavior;
 - DuckDB queries in this environment;
 - Docker image build/start in this environment;
 - semantic equality against a statistically meaningful sample of live Pump.fun UI or

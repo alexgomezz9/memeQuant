@@ -132,16 +132,48 @@ class StateStore:
         self.increment_many({key: amount})
 
     def increment_many(self, values: dict[str, int]) -> None:
-        rows = [(key, int(amount)) for key, amount in values.items() if amount]
-        if not rows:
+        self.update_counters(increments=values)
+
+    def update_counters(
+        self,
+        *,
+        increments: dict[str, int] | None = None,
+        gauges: dict[str, int] | None = None,
+        maxima: dict[str, int] | None = None,
+    ) -> None:
+        """Update cumulative counters and gauges in one SQLite transaction."""
+        increments = increments or {}
+        gauges = gauges or {}
+        maxima = maxima or {}
+        rows = [(key, int(amount)) for key, amount in increments.items() if amount]
+        gauge_rows = [(key, int(value)) for key, value in gauges.items()]
+        maximum_rows = [(key, int(value)) for key, value in maxima.items()]
+        if not rows and not gauge_rows and not maximum_rows:
             return
-        self.conn.executemany(
-            """
-            INSERT INTO counters(key,value) VALUES(?,?)
-            ON CONFLICT(key) DO UPDATE SET value=value+excluded.value
-            """,
-            rows,
-        )
+        if rows:
+            self.conn.executemany(
+                """
+                INSERT INTO counters(key,value) VALUES(?,?)
+                ON CONFLICT(key) DO UPDATE SET value=value+excluded.value
+                """,
+                rows,
+            )
+        if gauge_rows:
+            self.conn.executemany(
+                """
+                INSERT INTO counters(key,value) VALUES(?,?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                """,
+                gauge_rows,
+            )
+        if maximum_rows:
+            self.conn.executemany(
+                """
+                INSERT INTO counters(key,value) VALUES(?,?)
+                ON CONFLICT(key) DO UPDATE SET value=MAX(value,excluded.value)
+                """,
+                maximum_rows,
+            )
         self.conn.commit()
 
     def counters(self) -> dict[str, int]:

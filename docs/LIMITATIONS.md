@@ -8,3 +8,12 @@
 6. **Derived live cache is not canonical.** Rebuild it from RAW after crashes, IDL changes or before formal research runs.
 7. **No historical backfill tool yet.** The collector starts from the current tip. Historical acquisition should be a separate, rate-limited job with historical schema handling.
 8. **No feature/label/execution layer yet.** Any profitability inference at this stage would be unjustified.
+9. **Failed log notifications are not full RAW rows.** In `logsSubscribe` mode, notifications
+   carrying `err != null` are counted but not fetched, because they cannot commit economic state.
+10. **Reconnect recovery still uses HTTP.** Direct log decoding removes the steady-state
+    `getTransaction` bottleneck. A long historical recovery still fetches full transactions while
+    live notifications queue, so it can hit the fail-closed cap or queue bound.
+11. **Streaming logs are not transaction envelopes.** They do not provide block time,
+    transaction index, account keys, instructions, balance deltas, transaction fee/compute usage,
+    message version or address-lookup details. Current typed Pump event research does not require
+    those fields, but transaction-topology research does.

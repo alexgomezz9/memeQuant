@@ -12,11 +12,15 @@ from memequant.utils import utc_now
 log = logging.getLogger(__name__)
 
 
-class ReconciliationLimitExceeded(RuntimeError):
+class ReconciliationError(RuntimeError):
+    """Recovery cannot continue without risking an unreported data gap."""
+
+
+class ReconciliationLimitExceeded(ReconciliationError):
     """Raised rather than silently skipping an unbounded historical gap."""
 
 
-class ReconciliationTransactionUnavailable(RuntimeError):
+class ReconciliationTransactionUnavailable(ReconciliationError):
     """Raised when a missing signature cannot be fetched safely during recovery."""
 
 
@@ -35,12 +39,20 @@ class Reconciler:
         provider: str,
         commitment: str,
         max_signatures: int = 2000,
+        metric_sink: Callable[[str, int], None] | None = None,
     ):
         self.rpc = rpc
         self.state = state
         self.provider = provider
         self.commitment = commitment
         self.max_signatures = max_signatures
+        self._metric_sink = metric_sink
+
+    def _count(self, key: str, amount: int = 1) -> None:
+        if self._metric_sink is None:
+            self.state.increment(key, amount)
+        else:
+            self._metric_sink(key, amount)
 
     async def bootstrap_if_needed(self, program_id: str) -> bool:
         """Set a start boundary on a brand-new collector without historical backfill.
@@ -104,11 +116,20 @@ class Reconciler:
             if probe:
                 raise ReconciliationLimitExceeded(
                     f"more than {self.max_signatures} signatures are missing for {program_id}; "
-                    "increase MEMEQUANT_MAX_RECONCILE_SIGNATURES before continuing"
+                    "collector halted without advancing the checkpoint; inspect the gap and "
+                    "run a deliberate bounded recovery before resuming"
                 )
 
+        # Failed signatures cannot have committed economic effects and logsSubscribe gives
+        # us the same error status directly. Do not spend getTransaction credits on them
+        # during recovery. Keep a counter so the filtering remains observable.
+        successful = [item for item in found if item.get("err") is None]
+        skipped = len(found) - len(successful)
+        if skipped:
+            self.state.increment("reconcile_failed_signatures_skipped", skipped)
+
         # RPC returns newest -> oldest. Replay oldest -> newest for deterministic state.
-        return list(reversed(found))
+        return list(reversed(successful))
 
     async def _get_transaction_or_fail(self, signature: str) -> dict:
         # A signature may become visible slightly before the full transaction is available
@@ -120,6 +141,7 @@ class Reconciler:
             if result is not None:
                 return result
             if attempt < 4:
+                self._count("getTransaction_retries")
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 1.2)
         raise ReconciliationTransactionUnavailable(

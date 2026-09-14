@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from memequant.models import RawTransactionEnvelope
+from memequant.models import RawLogNotification, RawTransactionEnvelope
 
 
 def load_idl(name: str) -> dict[str, Any]:
@@ -66,15 +66,23 @@ def _encode(type_spec: Any, value: Any, types: dict[str, dict]) -> bytes:
 
 def default_value(type_spec: Any, seed: int = 7) -> Any:
     if isinstance(type_spec, str):
-        if type_spec == "pubkey": return bytes([seed]) * 32
-        if type_spec == "string": return "x"
-        if type_spec == "bytes": return b"x"
-        if type_spec == "bool": return False
+        if type_spec == "pubkey":
+            return bytes([seed]) * 32
+        if type_spec == "string":
+            return "x"
+        if type_spec == "bytes":
+            return b"x"
+        if type_spec == "bool":
+            return False
         return 1
-    if "vec" in type_spec: return []
-    if "option" in type_spec: return None
-    if "array" in type_spec: return [default_value(type_spec["array"][0], seed)] * int(type_spec["array"][1])
-    if "defined" in type_spec: return None  # overridden when needed
+    if "vec" in type_spec:
+        return []
+    if "option" in type_spec:
+        return None
+    if "array" in type_spec:
+        return [default_value(type_spec["array"][0], seed)] * int(type_spec["array"][1])
+    if "defined" in type_spec:
+        return None  # overridden when needed
     raise AssertionError(type_spec)
 
 
@@ -87,7 +95,8 @@ def encode_event(idl: dict[str, Any], event_name: str, overrides: dict[str, Any]
             value = overrides[field["name"]]
         elif isinstance(field["type"], dict) and "defined" in field["type"]:
             name = field["type"]["defined"]
-            if isinstance(name, dict): name = name["name"]
+            if isinstance(name, dict):
+                name = name["name"]
             nested = types[name]["type"]["fields"]
             value = {f["name"]: default_value(f["type"], 20+i) for f in nested}
         else:
@@ -121,4 +130,25 @@ def envelope(program: str, logs: list[str], *, signature: str = "sig1", err: Any
             "transaction": {"signatures": [signature], "message": {}},
             "version": "legacy",
         },
+    )
+
+
+def log_notification(
+    program: str,
+    logs: list[str],
+    *,
+    signature: str = "sig1",
+    err: Any = None,
+    slot: int = 123,
+) -> RawLogNotification:
+    return RawLogNotification(
+        source_provider="test",
+        source_program=program,
+        slot=slot,
+        received_at=datetime(2026, 9, 10, 16, 0, tzinfo=UTC),
+        signature=signature,
+        err=err,
+        logs=logs,
+        subscription_id=77,
+        rpc_context={"slot": slot},
     )

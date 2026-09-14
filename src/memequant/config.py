@@ -35,12 +35,18 @@ class Settings(BaseSettings):
         default=2000, ge=0, le=100_000, alias="MEMEQUANT_MAX_RECONCILE_SIGNATURES"
     )
     http_concurrency: int = Field(default=8, ge=1, le=64, alias="MEMEQUANT_HTTP_CONCURRENCY")
+    http_rps_limit: float = Field(
+        default=6.0, ge=0.5, le=500.0, alias="MEMEQUANT_HTTP_RPS_LIMIT"
+    )
+    ws_queue_maxsize: int = Field(
+        default=5_000, ge=1, le=100_000, alias="MEMEQUANT_WS_QUEUE_MAXSIZE"
+    )
     parquet_batch_size: int = Field(
         default=500, ge=1, le=100_000, alias="MEMEQUANT_PARQUET_BATCH_SIZE"
     )
     raw_fsync_every: int = Field(default=100, ge=0, alias="MEMEQUANT_RAW_FSYNC_EVERY")
     max_supported_transaction_version: int = Field(
-        default=0, ge=0, le=1, alias="MEMEQUANT_MAX_SUPPORTED_TRANSACTION_VERSION"
+        default=1, ge=0, le=1, alias="MEMEQUANT_MAX_SUPPORTED_TRANSACTION_VERSION"
     )
     reconnect_min_seconds: float = Field(default=1.0, ge=0.1)
     reconnect_max_seconds: float = Field(default=30.0, ge=1.0)

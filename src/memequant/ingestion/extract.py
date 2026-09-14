@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
-from memequant.models import RawTransactionEnvelope
+from memequant.models import RawLogNotification, RawTransactionEnvelope
 
 
 def _signature(tx_entry: dict[str, Any]) -> str | None:
@@ -75,4 +76,34 @@ def envelope_from_get_transaction(
         signature=signature,
         transaction_index=None,
         rpc_transaction=result,
+    )
+
+
+def log_notification_from_message(
+    message: dict[str, Any],
+    *,
+    program_id: str,
+    provider: str,
+    received_at: datetime,
+) -> RawLogNotification:
+    params = message.get("params") or {}
+    result = params.get("result") or {}
+    context = result.get("context") or {}
+    value = result.get("value") or {}
+    signature = value.get("signature")
+    logs = value.get("logs")
+    if not signature or not isinstance(logs, list) or not all(
+        isinstance(item, str) for item in logs
+    ):
+        raise ValueError("malformed logsNotification: signature/logs missing or invalid")
+    return RawLogNotification(
+        source_provider=provider,
+        source_program=program_id,
+        slot=int(context["slot"]),
+        received_at=received_at,
+        signature=signature,
+        err=value.get("err"),
+        logs=logs,
+        subscription_id=int(params["subscription"]),
+        rpc_context=context,
     )

@@ -8,11 +8,11 @@ from typing import TextIO
 
 import orjson
 
-from memequant.models import RawTransactionEnvelope
+from memequant.models import RawLogNotification, RawTransactionEnvelope, StrictModel
 
 
-class RawJsonlGzipStore:
-    """Append-only authoritative transaction log, sharded hourly.
+class _RawJsonlGzipStore:
+    """Append-only authoritative record log, sharded hourly.
 
     Each append flushes the gzip stream before the ingestion engine advances its
     checkpoint. A process crash can therefore cause a duplicate raw record after
@@ -24,6 +24,8 @@ class RawJsonlGzipStore:
     deterministically and deduplicated by transaction signature/event_id.
     """
 
+    filename: str
+
     def __init__(self, root: Path, fsync_every: int = 100):
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
@@ -33,14 +35,14 @@ class RawJsonlGzipStore:
         self._key: tuple[str, str] | None = None
         self._written_since_fsync = 0
 
-    def _target(self, env: RawTransactionEnvelope) -> tuple[tuple[str, str], Path]:
+    def _target(self, env: StrictModel) -> tuple[tuple[str, str], Path]:
         dt = env.received_at
         date = dt.strftime("%Y-%m-%d")
         hour = dt.strftime("%H")
-        path = self.root / f"date={date}" / f"hour={hour}" / "transactions.jsonl.gz"
+        path = self.root / f"date={date}" / f"hour={hour}" / self.filename
         return (date, hour), path
 
-    def append(self, env: RawTransactionEnvelope) -> None:
+    def append(self, env: StrictModel) -> None:
         key, path = self._target(env)
         payload = orjson.dumps(env.model_dump(mode="json")).decode("utf-8") + "\n"
         with self._lock:
@@ -71,3 +73,21 @@ class RawJsonlGzipStore:
             self._handle = None
             self._key = None
             self._written_since_fsync = 0
+
+
+class RawJsonlGzipStore(_RawJsonlGzipStore):
+    """Append-only authoritative full-transaction envelopes."""
+
+    filename = "transactions.jsonl.gz"
+
+    def append(self, env: RawTransactionEnvelope) -> None:
+        super().append(env)
+
+
+class RawLogJsonlGzipStore(_RawJsonlGzipStore):
+    """Append-only authoritative logsSubscribe notifications."""
+
+    filename = "log_notifications.jsonl.gz"
+
+    def append(self, env: RawLogNotification) -> None:
+        super().append(env)

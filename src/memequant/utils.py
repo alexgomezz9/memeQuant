@@ -3,7 +3,6 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-
 _B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
